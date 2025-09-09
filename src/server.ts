@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import authRoutes from "./routes/v1/auth.routes";
 
 dotenv.config();
 
@@ -40,9 +41,7 @@ app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json());
 
-app.get("/api/v1/test", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
-});
+app.use("/api/v1/auth", authRoutes);
 
 // Start server
 app.listen(PORT, () => {
