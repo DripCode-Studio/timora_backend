@@ -1,6 +1,9 @@
 import prisma from "../../lib/dbConnection";
 import axios from "axios";
 import type { Request, Response } from "express";
+import { HttpError } from "../../lib/utils";
+import jwt from "jsonwebtoken";
+import type { SignOptions } from "jsonwebtoken";
 
 export const googleAuth = async (req: Request, res: Response) => {
   try {
@@ -26,7 +29,11 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
     const { code } = req.query;
 
     if (!code) {
-      throw new Error("Authorization code is missing");
+      throw new HttpError(
+        "Authorization code is missing",
+        "MissingAuthCodeError",
+        400
+      );
     }
 
     const { data } = await axios.post("https://oauth2.googleapis.com/token", {
@@ -67,7 +74,11 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
       });
 
       if (!newUser) {
-        throw new Error("Failed to create new user");
+        throw new HttpError(
+          "Failed to create new user",
+          "UserCreationError",
+          500
+        );
       }
 
       if (newUser) {
@@ -81,25 +92,50 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
         });
 
         if (!newAccount) {
-          return res.status(500).json({
-            success: false,
-            message: "Failed to create new account",
-            error: 500,
-            data: null,
-          });
-        } else {
-          return res.status(200).json({
-            success: true,
-            message: "User created successfully",
-            error: null,
-            data: {
+          // delete the user if account creation fails
+          await prisma.users.delete({
+            where: {
               id: newUser.id,
-              email: newUser.email,
-              name: newUser.name,
-              role: newUser.role,
             },
           });
+          throw new HttpError(
+            "Failed to create new account",
+            "AccountCreationError",
+            500
+          );
         }
+
+        // creating user session later (better-auth or passport or JWT)
+
+        // send refresh_token in httpOnly cookie
+        // res.cookie("refresh_token", refresh_token, {
+        //   httpOnly: true,
+        //   secure: process.env.NODE_ENV === "production",
+        //   sameSite: "strict",
+        //   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        // });
+
+        // Redirect to frontend with success message and user info
+        const redirectUrl =
+          process.env.FRONTEND_AUTH_CALLBACK_URL ||
+          "http://localhost:5173/auth-callback";
+        const url = new URL(redirectUrl);
+        const payload = {
+          id: newUser.id,
+          email: newUser.email,
+          name: newUser.name,
+          role: newUser.role,
+          avatar: newUser.avatar,
+        };
+        const options: SignOptions = {
+          expiresIn: "7d",
+        };
+        const serverSecret = process.env.JWT_SECRET as string;
+        const token = jwt.sign(payload, serverSecret, options);
+        url.searchParams.set("status", "success");
+        url.searchParams.set("message", "Authentication successful");
+        url.searchParams.set("token", token);
+        return res.redirect(url.toString());
       }
     } else {
       // update user account info in Account model
@@ -115,38 +151,69 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
       });
 
       if (updatedAccount.count === 0) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to update account",
-          error: 500,
-          data: null,
-        });
-      } else {
-        return res.status(200).json({
-          success: true,
-          message: "User logged in successfully",
-          error: null,
-          data: {
-            id: userExists.id,
-            email: userExists.email,
-            name: userExists.name,
-            role: userExists.role,
-          },
-        });
+        throw new HttpError(
+          "Failed to update account",
+          "AccountUpdateError",
+          500
+        );
       }
+      // creating user session later (better-auth or passport or JWT)
+
+      // send refresh_token in httpOnly cookie
+      // res.cookie("refresh_token", refresh_token, {
+      //   httpOnly: true,
+      //   secure: process.env.NODE_ENV === "production",
+      //   sameSite: "strict",
+      //   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      // });
+
+      // Redirect to frontend with success message and user info
+      const redirectUrl =
+        process.env.FRONTEND_AUTH_CALLBACK_URL ||
+        "http://localhost:5173/auth-callback";
+      const url = new URL(redirectUrl);
+      const payload = {
+        id: userExists.id,
+        email: userExists.email,
+        name: userExists.name,
+        role: userExists.role,
+        avatar: userExists.avatar,
+      };
+      const token = jwt.sign(payload, process.env.JWT_SECRET!, {
+        expiresIn: "30d",
+      });
+      url.searchParams.set("status", "success");
+      url.searchParams.set("message", "Authentication successful");
+      url.searchParams.set("token", token);
+      return res.redirect(url.toString());
     }
-
-    // creating user session later (better-auth or passport or JWT)
-
-    // send refresh_token in httpOnly cookie
-    // res.cookie("refresh_token", refresh_token, {
-    //   httpOnly: true,
-    //   secure: process.env.NODE_ENV === "production",
-    //   sameSite: "strict",
-    //   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    // });
   } catch (error) {
-    console.error("Error during Google OAuth2 callback:", error);
-    res.status(500).json({ message: "Internal server error " + error });
+    const e =
+      error instanceof HttpError
+        ? error
+        : new HttpError("An unexpected error occurred", "UnknownError", 500);
+
+    const fallbackUrl =
+      process.env.FRONTEND_AUTH_CALLBACK_URL ||
+      "http://localhost:5173/auth-callback";
+
+    try {
+      const url = new URL(fallbackUrl);
+      url.searchParams.set("status", "error");
+      url.searchParams.set("error", e.name);
+      url.searchParams.set("message", e.message);
+      url.searchParams.set("code", String((e as any).status ?? 500));
+      url.searchParams.set("source", "google_oauth_callback");
+
+      return res.redirect(url.toString());
+    } catch {
+      // Fallback to JSON if the URL is invalid
+      return res.status((e as any).status ?? 500).json({
+        success: false,
+        error: { name: e.name, message: e.message },
+        data: null,
+      });
+    }
+    console.error(e.message);
   }
 };
