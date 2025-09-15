@@ -14,7 +14,7 @@ datasource db {
 }
 
 
-model User {
+model Users {
   id            String         @id @default(cuid())
   email         String         @unique
   role          Role           @default(USER)
@@ -27,19 +27,18 @@ model User {
   
   // Relations
   //sessions      Session[]
-  accounts      Account[]
-  events        Event[]
-  calendars     Calendar[]
-  
+  accounts      Accounts[]
+  events        Events[]
+  calendars     Calendars[]
   @@map("users")
 }
 
 
 
-model Account {
+model Accounts {
   id                String  @id @default(cuid())
   userId            String
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
   googleId          String   // Google's user ID
   refresh_token     String? @db.Text
   access_token      String? @db.Text
@@ -48,12 +47,14 @@ model Account {
   scope             String?  // access granted
   //id_token          String? @db.Text
   //session_state     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   
   @@unique([googleId])
   @@map("accounts")
 }
 
-model Event {
+model Events {
   id           String   @id @default(cuid())
   title        String
   description  String?
@@ -69,9 +70,9 @@ model Event {
   
   // Relations
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
   calendarId   String?
-  calendar     Calendar? @relation(fields: [calendarId], references: [id])
+  calendar     Calendars? @relation(fields: [calendarId], references: [id])
   
   @@index([userId])
   @@index([startTime])
@@ -79,7 +80,7 @@ model Event {
   @@map("events")
 }
 
-model Calendar {
+model Calendars {
   id           String   @id @default(cuid())
   name         String
   color        String   @default("#3b82f6")
@@ -90,8 +91,8 @@ model Calendar {
   
   // Relations
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events       Event[]
+  user         Users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events       Events[]
   
   @@unique([userId, name])
   @@map("calendars")
