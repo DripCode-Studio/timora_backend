@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,92 +10,209 @@ datasource db {
   url      = env("PGADMIN_DB_URL")
 }
 
+// User model for authentication and profile management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-model Users {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  role          Role           @default(USER)
-  name          String?
-  avatar        String?
-  timezone      String?        @default("UTC")
-  emailVerified Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  
   // Relations
-  //sessions      Session[]
-  accounts      Accounts[]
-  events        Events[]
-  calendars     Calendars[]
+  events        Event[]
+  calendars     Calendar[]
+  notifications Notification[]
+  studyPartners StudyPartner[]
+  eventPartners EventPartner[]
+
   @@map("users")
 }
 
+// Calendar model for organizing events
+model Calendar {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#4CD964")
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-
-model Accounts {
-  id                String  @id @default(cuid())
-  userId            String
-  user              Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  googleId          String   // Google's user ID
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  //expires_at        Int?
-  lastSyncedAt      DateTime?
-  scope             String?  // access granted
-  //id_token          String? @db.Text
-  //session_state     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  @@unique([googleId])
-  @@map("accounts")
-}
-
-model Events {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  startTime    DateTime
-  endTime      DateTime
-  location     String?
-  color        String?  @default("#3b82f6") // Default blue color
-  allDay       Boolean  @default(false)
-  googleEventId String? @unique
-  timezone     String?  @default("UTC")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
   // Relations
-  userId       String
-  user         Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  calendarId   String?
-  calendar     Calendars? @relation(fields: [calendarId], references: [id])
-  
-  @@index([userId])
-  @@index([startTime])
-  @@index([calendarId])
-  @@map("events")
-}
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events Event[]
 
-model Calendars {
-  id           String   @id @default(cuid())
-  name         String
-  color        String   @default("#3b82f6")
-  isDefault    Boolean  @default(false)
-  googleCalendarId String? @unique
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  // Relations
-  userId       String
-  user         Users     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events       Events[]
-  
-  @@unique([userId, name])
   @@map("calendars")
 }
 
-enum Role {
-  ADMIN
-  USER
+// Main Event model
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  type        EventType @default(PERSONAL)
+  description String?
+  location    String?
+
+  // Date and time fields
+  startDate DateTime
+  endDate   DateTime
+  startTime String // Format: "HH:MM"
+  endTime   String // Format: "HH:MM"
+  isAllDay  Boolean  @default(false)
+
+  // Event properties
+  color    String?     @default("#3b82f6")
+  priority Priority    @default(MEDIUM)
+  status   EventStatus @default(SCHEDULED)
+
+  // Recurrence
+  isRecurring    Boolean @default(false)
+  recurrenceRule String? // RULE format for recurring events
+
+  // Foreign keys
+  userId     String
+  calendarId String
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendar      Calendar        @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  reminders     Reminder[]
+  checklist     ChecklistItem[]
+  partners      EventPartner[]
+  notifications Notification[]
+
+  @@map("events")
+}
+
+// Checklist items for event preparation
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  text      String
+  status    Boolean  @default(false)
+  order     Int      @default(0)
+  eventId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_items")
+}
+
+// Study partners for collaboration
+model StudyPartner {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events EventPartner[]
+
+  @@unique([email, userId])
+  @@map("study_partners")
+}
+
+// Junction table for many-to-many relationship between events and study partners
+model EventPartner {
+  id             String        @id @default(cuid())
+  eventId        String
+  studyPartnerId String
+  userId         String
+  status         PartnerStatus @default(INVITED)
+  createdAt      DateTime      @default(now())
+
+  // Relations
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  studyPartner StudyPartner @relation(fields: [studyPartnerId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, studyPartnerId])
+  @@map("event_partners")
+}
+
+// Reminders for events
+model Reminder {
+  id           String    @id @default(cuid())
+  eventId      String
+  reminderTime String // e.g., "1 hour before", "15 minutes before"
+  reminderDate DateTime? // Calculated reminder date/time
+  isTriggered  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("reminders")
+}
+
+// Notifications for users
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String?
+  type      NotificationType @default(REMINDER)
+  isRead    Boolean          @default(false)
+  userId    String
+  eventId   String?
+  dueDate   DateTime?
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// Enums
+enum EventType {
+  LECTURE
+  STUDY
+  PERSONAL
+  ASSIGNMENT
+
+  @@map("event_type")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+
+  @@map("priority")
+}
+
+enum EventStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("event_status")
+}
+
+enum PartnerStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+
+  @@map("partner_status")
+}
+
+enum NotificationType {
+  REMINDER
+  DEADLINE
+  INVITATION
+  UPDATE
+
+  @@map("notification_type")
 }

@@ -7,6 +7,7 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "^1.2.21",
+    "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.3",
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.3.1",
@@ -31,7 +32,6 @@
     "@prisma/client": "^6.15.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/compression": "^1.8.1",
-    "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/passport": "^1.0.17",
