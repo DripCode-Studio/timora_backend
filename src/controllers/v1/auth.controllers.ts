@@ -2,8 +2,16 @@ import prisma from "../../lib/dbConnection";
 import axios from "axios";
 import type { Request, Response } from "express";
 import { HttpError } from "../../lib/utils";
-import jwt from "jsonwebtoken";
-import type { SignOptions } from "jsonwebtoken";
+import {generateAccessToken, generateRefreshToken} from "../../lib/jwt.utils";
+import type { TokenPayload } from "../../types/auth.interface";
+
+const COOKIE_CONFIG = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  path: '/'
+};
 
 export const googleAuth = async (req: Request, res: Response) => {
   try {
@@ -46,7 +54,6 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
 
     const { access_token, id_token, refresh_token } = data;
 
-    // Fetch user info
     const userInfo = await axios.get(
       `https://www.googleapis.com/oauth2/v3/userinfo`,
       {
@@ -56,7 +63,7 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
       }
     );
 
-    const userExists = await prisma.users.findUnique({
+    const userExists = await prisma.user.findUnique({
       where: {
         email: userInfo.data.email,
       },
@@ -64,7 +71,7 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
 
     // If user does not exist, create a new user else update the exiting user access token and refresh token (if refresh token is present)
     if (!userExists) {
-      const newUser = await prisma.users.create({
+      const newUser = await prisma.user.create({
         data: {
           email: userInfo.data.email,
           role: "USER",
@@ -82,18 +89,18 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
       }
 
       if (newUser) {
-        const newAccount = await prisma.accounts.create({
+        const newAccount = await prisma.account.create({
           data: {
             userId: newUser.id,
             googleId: userInfo.data.sub,
-            refresh_token: refresh_token,
-            access_token: access_token,
+            refreshToken: refresh_token,
+            accessToken: access_token,
           },
         });
 
         if (!newAccount) {
           // delete the user if account creation fails
-          await prisma.users.delete({
+          await prisma.user.delete({
             where: {
               id: newUser.id,
             },
@@ -105,20 +112,8 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           );
         }
 
-        // creating user session later (better-auth or passport or JWT)
-
-        // send refresh_token in httpOnly cookie
-        // res.cookie("refresh_token", refresh_token, {
-        //   httpOnly: true,
-        //   secure: process.env.NODE_ENV === "production",
-        //   sameSite: "strict",
-        //   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        // });
-
-        // Redirect to frontend with success message and user info
         const redirectUrl =
-          process.env.FRONTEND_AUTH_CALLBACK_URL ||
-          "http://localhost:5173/auth-callback";
+          process.env.FRONTEND_AUTH_CALLBACK_URL! ;
         const url = new URL(redirectUrl);
         const payload = {
           id: newUser.id,
@@ -127,26 +122,23 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           role: newUser.role,
           avatar: newUser.avatar,
         };
-        const options: SignOptions = {
-          expiresIn: "7d",
-        };
-        const serverSecret = process.env.JWT_SECRET as string;
-        const token = jwt.sign(payload, serverSecret, options);
+       
+        const token = generateAccessToken(payload);
+        res.cookie('token', token, COOKIE_CONFIG);
         url.searchParams.set("status", "success");
         url.searchParams.set("message", "Authentication successful");
         url.searchParams.set("token", token);
         return res.redirect(url.toString());
       }
     } else {
-      // update user account info in Account model
-      const updatedAccount = await prisma.accounts.updateMany({
+      const updatedAccount = await prisma.account.updateMany({
         where: {
           userId: userExists.id,
         },
         data: {
-          access_token: access_token,
+          accessToken: access_token,
           // only update refresh token if it is present in the response
-          ...(refresh_token && { refresh_token: refresh_token }),
+          ...(refresh_token && { refreshToken: refresh_token }),
         },
       });
 
@@ -157,31 +149,19 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           500
         );
       }
-      // creating user session later (better-auth or passport or JWT)
-
-      // send refresh_token in httpOnly cookie
-      // res.cookie("refresh_token", refresh_token, {
-      //   httpOnly: true,
-      //   secure: process.env.NODE_ENV === "production",
-      //   sameSite: "strict",
-      //   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      // });
-
-      // Redirect to frontend with success message and user info
+      
       const redirectUrl =
-        process.env.FRONTEND_AUTH_CALLBACK_URL ||
-        "http://localhost:5173/auth-callback";
+        process.env.FRONTEND_AUTH_CALLBACK_URL! ;
       const url = new URL(redirectUrl);
-      const payload = {
+      const payload:TokenPayload = {
         id: userExists.id,
         email: userExists.email,
         name: userExists.name,
         role: userExists.role,
         avatar: userExists.avatar,
       };
-      const token = jwt.sign(payload, process.env.JWT_SECRET!, {
-        expiresIn: "30d",
-      });
+      const token = generateAccessToken(payload);
+      res.cookie('token', token, COOKIE_CONFIG);
       url.searchParams.set("status", "success");
       url.searchParams.set("message", "Authentication successful");
       url.searchParams.set("token", token);
