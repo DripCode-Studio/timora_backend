@@ -12,12 +12,14 @@ datasource db {
 
 // User model for authentication and profile management
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  email      String   @unique
+  role       UserRole @default(USER)
+  isVerified Boolean  @default(false)
+  name       String?
+  avatar     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   events        Event[]
@@ -25,8 +27,25 @@ model User {
   notifications Notification[]
   studyPartners StudyPartner[]
   eventPartners EventPartner[]
+  Account       Account?
 
   @@map("users")
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  googleId     String?  @unique
+  accessToken  String?
+  refreshToken String?
+  tokenType    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("accounts")
 }
 
 // Calendar model for organizing events
@@ -198,6 +217,14 @@ enum EventStatus {
   CANCELLED
 
   @@map("event_status")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  GUEST
+
+  @@map("user_role")
 }
 
 enum PartnerStatus {
