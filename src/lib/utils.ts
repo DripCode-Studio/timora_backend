@@ -9,3 +9,4 @@ export class HttpError extends Error {
     Error.captureStackTrace?.(this, this.constructor);
   }
 }
+
