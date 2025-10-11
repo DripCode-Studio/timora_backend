@@ -2,15 +2,15 @@ import prisma from "../../lib/dbConnection";
 import axios from "axios";
 import type { Request, Response } from "express";
 import { HttpError } from "../../lib/utils";
-import {generateAccessToken, generateRefreshToken} from "../../lib/jwt.utils";
+import { generateAccessToken, generateRefreshToken } from "../../lib/jwt.utils";
 import type { TokenPayload } from "../../types/auth.interface";
 
 const COOKIE_CONFIG = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-  path: '/'
+  path: "/",
 };
 
 export const googleAuth = async (req: Request, res: Response) => {
@@ -112,8 +112,7 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           );
         }
 
-        const redirectUrl =
-          process.env.FRONTEND_AUTH_CALLBACK_URL! ;
+        const redirectUrl = process.env.FRONTEND_AUTH_CALLBACK_URL!;
         const url = new URL(redirectUrl);
         const payload = {
           id: newUser.id,
@@ -122,9 +121,9 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           role: newUser.role,
           avatar: newUser.avatar,
         };
-       
+
         const token = generateAccessToken(payload);
-        res.cookie('token', token, COOKIE_CONFIG);
+        res.cookie("token", token, COOKIE_CONFIG);
         url.searchParams.set("status", "success");
         url.searchParams.set("message", "Authentication successful");
         url.searchParams.set("token", token);
@@ -149,11 +148,10 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           500
         );
       }
-      
-      const redirectUrl =
-        process.env.FRONTEND_AUTH_CALLBACK_URL! ;
+
+      const redirectUrl = process.env.FRONTEND_AUTH_CALLBACK_URL!;
       const url = new URL(redirectUrl);
-      const payload:TokenPayload = {
+      const payload: TokenPayload = {
         id: userExists.id,
         email: userExists.email,
         name: userExists.name,
@@ -161,7 +159,7 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
         avatar: userExists.avatar,
       };
       const token = generateAccessToken(payload);
-      res.cookie('token', token, COOKIE_CONFIG);
+      res.cookie("token", token, COOKIE_CONFIG);
       url.searchParams.set("status", "success");
       url.searchParams.set("message", "Authentication successful");
       url.searchParams.set("token", token);
@@ -194,6 +192,5 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
         data: null,
       });
     }
-    console.error(e.message);
   }
 };

@@ -5,6 +5,7 @@ import morgan from "morgan";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/v1/auth.routes";
+import eventRoutes from "./routes/v1/event.routes";
 
 dotenv.config();
 
@@ -48,6 +49,12 @@ app.use(cookieParser());
 app.use(express.json());
 
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/event", eventRoutes);
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ status: "OK", message: "Server is healthy" });
+});
 
 // Start server
 app.listen(PORT, () => {

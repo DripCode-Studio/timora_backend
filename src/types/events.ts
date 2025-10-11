@@ -1,10 +1,3 @@
-export enum EventType {
-  LECTURE = "LECTURE",
-  STUDY = "STUDY",
-  ASSIGNMENT = "ASSIGNMENT",
-  EXAM = "EXAM",
-}
-
 export enum priority {
   HIGH = "HIGH",
   MEDIUM = "MEDIUM",
@@ -19,9 +12,8 @@ export enum EventStatus {
 }
 
 export interface Event {
-  id: string;
   title: string;
-  type: EventType;
+  eventTypeId: string;
   description?: string;
   location?: string;
   startDate: Date;
@@ -33,8 +25,6 @@ export interface Event {
   priority: priority;
   status: EventStatus;
   isRecurring: boolean;
-  recurrencePattern?: string;
+  recurrenceRule?: string; // RULE format for recurring events
   userId: string;
-  createdAt: Date;
-  updatedAt: Date;
 }
