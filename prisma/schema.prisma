@@ -23,7 +23,6 @@ model User {
 
   // Relations
   events        Event[]
-  calendars     Calendar[]
   notifications Notification[]
   studyPartners StudyPartner[]
   eventPartners EventPartner[]
@@ -48,8 +47,8 @@ model Account {
   @@map("accounts")
 }
 
-// Calendar model for organizing events
-model Calendar {
+// EventType model for organizing events
+model EventType {
   id        String   @id @default(cuid())
   name      String
   color     String   @default("#4CD964")
@@ -58,17 +57,15 @@ model Calendar {
   updatedAt DateTime @updatedAt
 
   // Relations
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   events Event[]
 
-  @@map("calendars")
+  @@map("event_types")
 }
 
 // Main Event model
 model Event {
   id          String    @id @default(cuid())
   title       String
-  type        EventType @default(PERSONAL)
   description String?
   location    String?
 
@@ -90,7 +87,7 @@ model Event {
 
   // Foreign keys
   userId     String
-  calendarId String
+  eventTypeId String
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -98,7 +95,7 @@ model Event {
 
   // Relations
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  calendar      Calendar        @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  eventType     EventType       @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
   reminders     Reminder[]
   checklist     ChecklistItem[]
   partners      EventPartner[]
@@ -190,16 +187,6 @@ model Notification {
   event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
-}
-
-// Enums
-enum EventType {
-  LECTURE
-  STUDY
-  PERSONAL
-  ASSIGNMENT
-
-  @@map("event_type")
 }
 
 enum Priority {
