@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import * as z from "zod";
 import type { Event } from "../../types/events";
 import { HttpError } from "../../lib/utils";
-import { de } from "zod/locales";
+import { ca, de } from "zod/locales";
 
 // Enums for the event zod schema
 const EventPriority = z.enum(["LOW", "MEDIUM", "HIGH"]);
@@ -89,5 +89,160 @@ export const createEvent = async (req: Request, res: Response) => {
       // Handle other errors
       return res.status(500).json({ message: error.message });
     }
+  }
+};
+
+// Get all events for a user
+export const getUserEvents = async (req: Request, res: Response) => {
+  try {
+    // TODO: get user id from auth middleware instead of params
+    const userId = req.params.userId;
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+    const events = await prisma.event.findMany({
+      where: { userId },
+      include: { reminders: true, checklist: true, partners: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.status(200).json({ events });
+  } catch (error) {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// Get a single event by ID
+export const getEventById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: "Event ID is required" });
+    }
+
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: {
+        reminders: true,
+        checklist: true,
+        partners: true,
+        eventType: true,
+      },
+    });
+
+    // ? does this return empty object if not found or null?
+    // if (!event) {
+    //   return res.status(404).json({ message: "Event not found" });
+    // }
+    return res.status(200).json({ event });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to fetch event" });
+  }
+};
+
+// Update an event by ID
+export const updateEvent = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updatedData = req.body;
+
+    const event = await prisma.event.update({
+      where: { id },
+      data: updatedData,
+    });
+
+    if (!event) {
+      return res.status(404).json({ message: `Event with ID ${id} not found` });
+    }
+
+    return res.status(200).json({ event });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to update event" });
+  }
+};
+
+// Delete an event by ID
+export const deleteEvent = async (req: Request, res: Response) => {
+  try {
+    // TODO : get user id from auth middleware instead of params
+    const { id } = req.params;
+
+    const event = await prisma.event.delete({
+      where: { id },
+    });
+    if (!event) {
+      return res.status(404).json({ message: `Event with ID ${id} not found` });
+    }
+
+    return res.status(200).json({ message: "Event deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to delete event" });
+  }
+};
+
+// Get events within a date range for a user
+export const getUserEventsInRange = async (req: Request, res: Response) => {
+  try {
+    // TODO: get user id from auth middleware instead of params
+    const userId = req.params.userId;
+    const { startDate, endDate } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const events = await prisma.event.findMany({
+      where: {
+        userId,
+        startDate: {
+          gte: new Date(startDate as string),
+        },
+        endDate: { lte: new Date(endDate as string) },
+      },
+      include: {
+        reminders: true,
+        checklist: true,
+        partners: true,
+        eventType: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({ events });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Error fetching events by date range" });
+  }
+};
+
+// Get events by event type for a user
+export const getUserEventsByType = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { eventTypeId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const events = await prisma.event.findMany({
+      where: {
+        userId,
+        eventTypeId: eventTypeId as string,
+      },
+      include: {
+        reminders: true,
+        checklist: true,
+        partners: true,
+        eventType: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({ events });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Error fetching events by event type" });
   }
 };
