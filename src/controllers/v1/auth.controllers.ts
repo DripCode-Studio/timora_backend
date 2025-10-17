@@ -1,9 +1,10 @@
 import prisma from "../../lib/dbConnection";
 import axios from "axios";
 import type { Request, Response } from "express";
-import { HttpError } from "../../lib/utils";
+import { HttpError, generateExpireDateInSeconds } from "../../lib/utils";
 import { generateAccessToken, generateRefreshToken } from "../../lib/jwt.utils";
 import type { TokenPayload } from "../../types/auth.interface";
+import { th } from "zod/locales";
 
 const COOKIE_CONFIG = {
   httpOnly: true,
@@ -52,7 +53,7 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
       grant_type: "authorization_code",
     });
 
-    const { access_token, id_token, refresh_token } = data;
+    const { access_token, refresh_token, expires_in } = data;
 
     const userInfo = await axios.get(
       `https://www.googleapis.com/oauth2/v3/userinfo`,
@@ -80,6 +81,16 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
         },
       });
 
+      const payload: TokenPayload = {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        avatar: newUser.avatar,
+      };
+      const jwt_accessToken = generateAccessToken(payload);
+      const jwt_refreshToken = generateRefreshToken(payload);
+
       if (!newUser) {
         throw new HttpError(
           "Failed to create new user",
@@ -87,70 +98,56 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
           500
         );
       }
-
-      if (newUser) {
-        const newAccount = await prisma.account.create({
-          data: {
-            userId: newUser.id,
-            googleId: userInfo.data.sub,
-            refreshToken: refresh_token,
-            accessToken: access_token,
-          },
-        });
-
-        if (!newAccount) {
-          // delete the user if account creation fails
-          await prisma.user.delete({
-            where: {
-              id: newUser.id,
-            },
-          });
-          throw new HttpError(
-            "Failed to create new account",
-            "AccountCreationError",
-            500
-          );
-        }
-
-        const redirectUrl = process.env.FRONTEND_AUTH_CALLBACK_URL!;
-        const url = new URL(redirectUrl);
-        const payload = {
-          id: newUser.id,
-          email: newUser.email,
-          name: newUser.name,
-          role: newUser.role,
-          avatar: newUser.avatar,
-        };
-
-        const token = generateAccessToken(payload);
-        res.cookie("token", token, COOKIE_CONFIG);
-        url.searchParams.set("status", "success");
-        url.searchParams.set("message", "Authentication successful");
-        url.searchParams.set("token", token);
-        return res.redirect(url.toString());
-      }
-    } else {
-      const updatedAccount = await prisma.account.updateMany({
-        where: {
-          userId: userExists.id,
-        },
+      // Create Google tokens entry
+      const googleTokens = await prisma.google_tokens.create({
         data: {
+          userId: newUser.id,
           accessToken: access_token,
-          // only update refresh token if it is present in the response
-          ...(refresh_token && { refreshToken: refresh_token }),
+          refreshToken: refresh_token,
+          expiryDate: expires_in,
         },
       });
 
-      if (updatedAccount.count === 0) {
+      if (!googleTokens) {
         throw new HttpError(
-          "Failed to update account",
-          "AccountUpdateError",
+          "Failed to create Google tokens",
+          "GoogleTokensCreationError",
+          500
+        );
+      }
+
+      const newAccount = await prisma.account.create({
+        data: {
+          userId: newUser.id,
+          refreshToken: jwt_refreshToken,
+          expiryDate: generateExpireDateInSeconds(30),
+        },
+      });
+
+      if (!newAccount || !googleTokens) {
+        // delete the user if account creation fails
+        await prisma.user.delete({
+          where: {
+            id: newUser.id,
+          },
+        });
+        throw new HttpError(
+          "Failed to create new account",
+          "AccountCreationError",
           500
         );
       }
 
       const redirectUrl = process.env.FRONTEND_AUTH_CALLBACK_URL!;
       const url = new URL(redirectUrl);
+
+      const token = generateAccessToken(payload);
+      res.cookie("RefreshTokejn", jwt_refreshToken, COOKIE_CONFIG);
+      url.searchParams.set("status", "success");
+      url.searchParams.set("message", "Authentication successful");
+      url.searchParams.set("token", jwt_accessToken);
+      return res.redirect(url.toString());
+    } else {
       const payload: TokenPayload = {
         id: userExists.id,
         email: userExists.email,
@@ -158,14 +155,57 @@ export const googleAuthCallback = async (req: Request, res: Response) => {
         role: userExists.role,
         avatar: userExists.avatar,
       };
-      const token = generateAccessToken(payload);
-      res.cookie("token", token, COOKIE_CONFIG);
+      const jwt_accessToken = generateAccessToken(payload);
+      const jwt_refreshToken = generateRefreshToken(payload);
+
+      const userAccount = await prisma.account.update({
+        where: {
+          userId: userExists.id,
+        },
+        data: {
+          refreshToken: jwt_refreshToken,
+          expiryDate: generateExpireDateInSeconds(30),
+        },
+      });
+
+      if (!userAccount) {
+        throw new HttpError(
+          "Failed to update user account (refresh token)",
+          "AccountUpdateError",
+          500
+        );
+      }
+
+      const updatedGoogleTokens = await prisma.google_tokens.updateMany({
+        where: {
+          userId: userExists.id,
+        },
+        data: {
+          accessToken: access_token,
+          expiryDate: expires_in,
+          refreshToken: refresh_token,
+        },
+      });
+
+      if (updatedGoogleTokens.count === 0) {
+        throw new HttpError(
+          "Failed to update Google Tokens",
+          "GoogleTokensUpdateError",
+          500
+        );
+      }
+
+      const redirectUrl = process.env.FRONTEND_AUTH_CALLBACK_URL!;
+      const url = new URL(redirectUrl);
+
+      res.cookie("refreshToken", jwt_refreshToken, COOKIE_CONFIG);
       url.searchParams.set("status", "success");
       url.searchParams.set("message", "Authentication successful");
-      url.searchParams.set("token", token);
+      url.searchParams.set("token", jwt_accessToken);
       return res.redirect(url.toString());
     }
   } catch (error) {
+    console.error("Error during Google OAuth callback:", error);
     const e =
       error instanceof HttpError
         ? error

@@ -1,9 +1,9 @@
 import prisma from "../../lib/dbConnection";
 import type { Request, Response } from "express";
 import * as z from "zod";
-import type { Event } from "../../types/events";
-import { HttpError } from "../../lib/utils";
-import { ca, de } from "zod/locales";
+import axios from "axios";
+import { google } from "googleapis";
+import { HttpError, convertToGoogleCalendarEvent } from "../../lib/utils";
 
 // Enums for the event zod schema
 const EventPriority = z.enum(["LOW", "MEDIUM", "HIGH"]);
@@ -13,6 +13,8 @@ const EventStatus = z.enum([
   "COMPLETED",
   "CANCELLED",
 ]);
+const calendar_Id = "primary";
+const GoogleAPIUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendar_Id}/events`;
 
 // zod schema for event validation
 const eventSchema = z.object({
@@ -69,6 +71,11 @@ export const createEvent = async (req: Request, res: Response) => {
     const newEvent = await prisma.event.create({
       data: eventData,
     });
+    try {
+      // sync with google calendar
+
+      const googleEvent = convertToGoogleCalendarEvent(newEvent);
+    } catch (err) {}
 
     if (newEvent) {
       return res.status(201).json({ message: "Event created successfully" });
@@ -112,10 +119,12 @@ export const getUserEvents = async (req: Request, res: Response) => {
 };
 
 // Get a single event by ID
+
 export const getEventById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    if (!id) {
+    // ! validate id wtf is going on here, this medssage is not displaying
+    if (!id || id.trim() === "" || id === undefined || id === null) {
       return res.status(400).json({ message: "Event ID is required" });
     }
 
@@ -130,9 +139,9 @@ export const getEventById = async (req: Request, res: Response) => {
     });
 
     // ? does this return empty object if not found or null?
-    // if (!event) {
-    //   return res.status(404).json({ message: "Event not found" });
-    // }
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
+    }
     return res.status(200).json({ event });
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch event" });
@@ -140,6 +149,8 @@ export const getEventById = async (req: Request, res: Response) => {
 };
 
 // Update an event by ID
+
+//  TODO : before updating figure out how to handle fields that are being updated and not updated
 export const updateEvent = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -163,7 +174,6 @@ export const updateEvent = async (req: Request, res: Response) => {
 // Delete an event by ID
 export const deleteEvent = async (req: Request, res: Response) => {
   try {
-    // TODO : get user id from auth middleware instead of params
     const { id } = req.params;
 
     const event = await prisma.event.delete({
@@ -178,6 +188,7 @@ export const deleteEvent = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to delete event" });
   }
 };
+// TODO contorller to get all user events with filters
 
 // Get events within a date range for a user
 export const getUserEventsInRange = async (req: Request, res: Response) => {
@@ -218,6 +229,7 @@ export const getUserEventsInRange = async (req: Request, res: Response) => {
 // Get events by event type for a user
 export const getUserEventsByType = async (req: Request, res: Response) => {
   try {
+    // TODO get user id from the auth middleware instead of params
     const { userId } = req.params;
     const { eventTypeId } = req.query;
 

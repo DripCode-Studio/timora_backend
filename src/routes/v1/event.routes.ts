@@ -1,8 +1,18 @@
 import express from "express";
-import { createEvent } from "../../controllers/v1/event.controller";
+import {
+  createEvent,
+  getEventById,
+  deleteEvent,
+  getUserEventsInRange,
+  getUserEventsByType,
+} from "../../controllers/v1/event.controller";
 
 const eventRoutes = express.Router();
 
 eventRoutes.post("/create-event", createEvent);
+eventRoutes.get("/:id", getEventById);
+// eventRoutes.put("/:id", updateEvent);
+eventRoutes.delete("/:id", deleteEvent);
+eventRoutes.get("/user-events/:id", getUserEventsInRange);
 
 export default eventRoutes;

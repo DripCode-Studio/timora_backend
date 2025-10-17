@@ -24,9 +24,10 @@ model User {
   // Relations
   events        Event[]
   notifications Notification[]
-  studyPartners StudyPartner[]
-  eventPartners EventPartner[]
+  studyPartners Study_partner[]
+  eventPartners Event_partner[]
   Account       Account?
+  GoogleTokens google_tokens?
 
   @@map("users")
 }
@@ -34,10 +35,8 @@ model User {
 model Account {
   id           String   @id @default(cuid())
   userId       String   @unique
-  googleId     String?  @unique
-  accessToken  String?
-  refreshToken String?
-  tokenType    String?
+  refreshToken String
+  expiryDate   Int
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -46,9 +45,23 @@ model Account {
 
   @@map("accounts")
 }
+model google_tokens{
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  accessToken  String
+  refreshToken String
+  expiryDate   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("google_tokens")
+}
 
 // EventType model for organizing events
-model EventType {
+model Event_type {
   id        String   @id @default(cuid())
   name      String
   color     String   @default("#4CD964")
@@ -64,7 +77,7 @@ model EventType {
 
 // Main Event model
 model Event {
-  id          String    @id @default(cuid())
+  id          String    @id
   title       String
   description String?
   location    String?
@@ -95,10 +108,10 @@ model Event {
 
   // Relations
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  eventType     EventType       @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  eventType     Event_type       @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
   reminders     Reminder[]
   checklist     ChecklistItem[]
-  partners      EventPartner[]
+  partners      Event_partner[]
   notifications Notification[]
 
   @@map("events")
@@ -121,7 +134,7 @@ model ChecklistItem {
 }
 
 // Study partners for collaboration
-model StudyPartner {
+model Study_partner {
   id        String   @id @default(cuid())
   name      String
   email     String
@@ -131,14 +144,14 @@ model StudyPartner {
 
   // Relations
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events EventPartner[]
+  events Event_partner[]
 
   @@unique([email, userId])
   @@map("study_partners")
 }
 
 // Junction table for many-to-many relationship between events and study partners
-model EventPartner {
+model Event_partner {
   id             String        @id @default(cuid())
   eventId        String
   studyPartnerId String
@@ -148,7 +161,7 @@ model EventPartner {
 
   // Relations
   event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  studyPartner StudyPartner @relation(fields: [studyPartnerId], references: [id], onDelete: Cascade)
+  studyPartner Study_partner @relation(fields: [studyPartnerId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, studyPartnerId])
