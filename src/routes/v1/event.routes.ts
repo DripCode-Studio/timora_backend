@@ -6,7 +6,7 @@ import {
   getUserEventsInRange,
   getUserEventsByType,
 } from "../../controllers/v1/event.controller";
-
+import authMiddleware from "../../middlewares/auth.middleware";
 const eventRoutes = express.Router();
 
 eventRoutes.post("/create-event", createEvent);

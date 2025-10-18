@@ -1,9 +1,14 @@
 import prisma from "../../lib/dbConnection";
+import oauth2Client from "../../lib/googleOAuthClient";
 import type { Request, Response } from "express";
 import * as z from "zod";
-import axios from "axios";
 import { google } from "googleapis";
-import { HttpError, convertToGoogleCalendarEvent } from "../../lib/utils";
+import {
+  HttpError,
+  convertToGoogleCalendarEvent,
+  generateGoogleCalendarEventId,
+} from "../../lib/utils";
+import { time } from "console";
 
 // Enums for the event zod schema
 const EventPriority = z.enum(["LOW", "MEDIUM", "HIGH"]);
@@ -14,7 +19,6 @@ const EventStatus = z.enum([
   "CANCELLED",
 ]);
 const calendar_Id = "primary";
-const GoogleAPIUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendar_Id}/events`;
 
 // zod schema for event validation
 const eventSchema = z.object({
@@ -35,6 +39,7 @@ const eventSchema = z.object({
   isRecurring: z.boolean(),
   recurrenceRule: z.string().optional(),
   userId: z.string(),
+  timezone: z.string(),
 });
 
 // create new event
@@ -42,9 +47,10 @@ export const createEvent = async (req: Request, res: Response) => {
   try {
     // First validate the schema
     const validatedData = eventSchema.parse(req.body);
-
+    const id = generateGoogleCalendarEventId();
     // Create event data object with required fields
     const eventData = {
+      id,
       title: validatedData.title,
       eventTypeId: validatedData.eventTypeId,
       startDate: validatedData.startDate,
@@ -68,17 +74,97 @@ export const createEvent = async (req: Request, res: Response) => {
     if (validatedData.recurrenceRule)
       eventData.recurrenceRule = validatedData.recurrenceRule;
 
+    // Save the event to the database
     const newEvent = await prisma.event.create({
       data: eventData,
     });
+
+    // Variables for Google Calendar sync succes or failure
+    let isGoogleSync = false;
+    let googleSyncMessage = "";
     try {
       // sync with google calendar
 
-      const googleEvent = convertToGoogleCalendarEvent(newEvent);
-    } catch (err) {}
+      const googleEvent = convertToGoogleCalendarEvent(validatedData);
+      // const googleEvent = {
+      //   summary: "Google I/O 2015",
+      //   location: "800 Howard St., San Francisco, CA 94103",
+      //   description: "A chance to hear more about Google's developer products.",
+      //   start: {
+      //     dateTime: "2025-10-28T09:00:00-07:00",
+      //     timeZone: "America/Los_Angeles",
+      //   },
+      //   end: {
+      //     dateTime: "2025-10-28T17:00:00-07:00",
+      //     timeZone: "America/Los_Angeles",
+      //   },
+      //   recurrence: ["RRULE:FREQ=DAILY;COUNT=2"],
+      //   attendees: [
+      //     { email: "lpage@example.com" },
+      //     { email: "sbrin@example.com" },
+      //   ],
+      //   reminders: {
+      //     useDefault: false,
+      //     overrides: [
+      //       { method: "email", minutes: 24 * 60 },
+      //       { method: "popup", minutes: 10 },
+      //     ],
+      //   },
+      // };
+
+      // ? debugging logs
+      console.log(googleEvent);
+
+      const getUserGoogleTokens = await prisma.google_tokens.findUnique({
+        where: { userId: validatedData.userId },
+      });
+
+      if (!getUserGoogleTokens) {
+        isGoogleSync = false;
+        googleSyncMessage =
+          "No Google tokens found for user. Google Calendar sync failed. ";
+      } else {
+        oauth2Client.setCredentials({
+          access_token: getUserGoogleTokens.accessToken,
+          refresh_token: getUserGoogleTokens.refreshToken,
+          scope: "https://www.googleapis.com/auth/calendar",
+          token_type: "Bearer",
+          expiry_date: getUserGoogleTokens.expiryDate,
+        });
+
+        const calendar = google.calendar({
+          version: "v3",
+          auth: oauth2Client,
+        });
+
+        const response = await calendar.events.insert({
+          auth: oauth2Client,
+          calendarId: calendar_Id,
+          requestBody: { id, ...googleEvent },
+        });
+
+        console.log("Google Calendar API response:", response.status);
+        if (response.status === 200 || response.status === 201) {
+          isGoogleSync = true;
+          googleSyncMessage = "Google Calendar sync successful.";
+        } else {
+          isGoogleSync = false;
+          googleSyncMessage = "Google Calendar sync failed.";
+        }
+      }
+    } catch (err: any) {
+      isGoogleSync = false;
+      googleSyncMessage = "Google Calendar sync failed";
+
+      // ? Log the error for debugging
+      console.error("Google Calendar sync error:", err.message);
+    }
 
     if (newEvent) {
-      return res.status(201).json({ message: "Event created successfully" });
+      return res.status(201).json({
+        message: "Event created successfully",
+        googleSync: { isGoogleSync, googleSyncMessage },
+      });
     } else {
       throw new HttpError("Event creation failed", "CreationError", 500);
     }

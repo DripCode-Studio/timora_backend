@@ -1,3 +1,10 @@
+import { randomBytes } from "crypto";
+import { DateTime } from "luxon";
+interface GoogleDateTime {
+  dateTime: string;
+  timeZone: string;
+}
+
 /**
  * Custom Error class to represent HTTP errors with status codes.
  * Extends the built-in Error class.
@@ -30,60 +37,35 @@ export class HttpError extends Error {
  * @returns {object} A Google Calendar event object.
  */
 export const convertToGoogleCalendarEvent = (event: any) => {
+  const { start, end } = getGoogleCalendarDateTimeFields(event);
   return {
     summary: event.title,
     description: event.description || "",
-    location: event.location || "",
-    start: {
-      dateTime: `${event.startDate.toISOString().split("T")[0]}T${
-        event.startTime
-      }`,
-      timeZone: "UTC",
-    },
-    end: {
-      dateTime: `${event.endDate.toISOString().split("T")[0]}T${event.endTime}`,
-      timeZone: "UTC",
-    },
-    recurrence: event.recurrenceRule ? [event.recurrenceRule] : undefined,
+    start,
+    end,
+    ...(event.recurrenceRule && { recurrence: [event.recurrenceRule] }),
+    ...(event.location && { recurrence: [event.location] }),
   };
 };
 
 /**
- * Generates a unique ID compatible with Google Calendar event IDs
- * Uses base32hex encoding (a-v, 0-9) and UUID algorithm to minimize collisions
+ * Generate a random event ID.
  *
- * @returns {string} A unique Google Calendar-compatible event ID (26 characters)
+ *
+ * @returns {string} A base32hex-encoded ID string.
  */
-// function generateGoogleCalendarEventId() {
-//   const base32hexChars = "abcdefghijklmnopqrstuv0123456789";
+export const generateGoogleCalendarEventId = (): string => {
+  const BASE32HEX_CHARS = "0123456789abcdefghijklmnopqrstuv";
 
-//   // Generate 128 bits of random data (UUID size)
-//   const randomBytes = crypto.getRandomValues(new Uint8Array(16));
+  let result = "";
+  const bytes = randomBytes(32);
 
-//   // Convert to base32hex encoding
-//   let eventId = "";
-//   let buffer = 0;
-//   let bitsInBuffer = 0;
+  for (let i = 0; i < 32; i++) {
+    result += BASE32HEX_CHARS[bytes[i]! % BASE32HEX_CHARS.length];
+  }
 
-//   for (let i = 0; i < randomBytes.length; i++) {
-//     buffer = (buffer << 8) | randomBytes[i];
-//     bitsInBuffer += 8;
-
-//     while (bitsInBuffer >= 5) {
-//       bitsInBuffer -= 5;
-//       const index = (buffer >> bitsInBuffer) & 0x1f;
-//       eventId += base32hexChars[index];
-//     }
-//   }
-
-//   // Handle remaining bits
-//   if (bitsInBuffer > 0) {
-//     const index = (buffer << (5 - bitsInBuffer)) & 0x1f;
-//     eventId += base32hexChars[index];
-//   }
-
-//   return eventId;
-// }
+  return result;
+};
 
 /**
  * Generates an expiration date in Unix epoch seconds for a given number of days from now.
@@ -93,4 +75,34 @@ export const convertToGoogleCalendarEvent = (event: any) => {
  */
 export const generateExpireDateInSeconds = (days: number): number => {
   return Math.floor(Date.now() / 1000) + days * 24 * 60 * 60;
+};
+/**
+ *  Get Google Calendar date and time fields based on event details.
+ * @param payload
+ * @returns
+ */
+export const getGoogleCalendarDateTimeFields = (payload: any) => {
+  const { startDate, endDate, startTime, endTime, timezone, isAllDay } =
+    payload;
+
+  if (isAllDay) {
+    // All-day events — use `date`
+    return {
+      start: { date: startDate },
+      end: { date: endDate },
+    };
+  } else {
+    // Timed events — use `dateTime`
+    const startISO = DateTime.fromISO(`${startDate}T${startTime}`, {
+      zone: timezone,
+    });
+    const endISO = DateTime.fromISO(`${endDate}T${endTime}`, {
+      zone: timezone,
+    });
+
+    return {
+      start: { dateTime: startISO.toISO(), timeZone: timezone },
+      end: { dateTime: endISO.toISO(), timeZone: timezone },
+    };
+  }
 };

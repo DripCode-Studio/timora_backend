@@ -65,7 +65,6 @@ model Event_type {
   id        String   @id @default(cuid())
   name      String
   color     String   @default("#4CD964")
-  userId    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
